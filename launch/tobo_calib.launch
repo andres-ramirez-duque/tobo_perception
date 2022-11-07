@@ -1,0 +1,31 @@
+<launch>
+  <arg name="calib_time" default="5.0"/>
+  <arg name="calib_nao" default="false"/>
+  <arg name="charuco_zed_frame_id" default="charuco_zed"/>
+  <arg name="charuco_nao_frame_id" default="charuco_nao"/>
+  
+  <param name="calib_file_name" value="$(find tobo_perception)/launch/scenario_calib.launch"/>
+  <param name="charuco_zed_frame_id" value="$(arg charuco_zed_frame_id)"/>
+  <param name="charuco_nao_frame_id" value="$(arg charuco_nao_frame_id)"/>
+  <param name="camera_frame_id" value="zed2_camera_center"/>
+  <param name="tobo_frame_id" value="nao_frame_id"/>
+  <param name="calib_time" value="$(arg calib_time)"/>
+  
+  <include file="$(find zed_wrapper)/launch/zed2.launch"/>
+  
+  <include file="$(find charuco_detector)/launch/charuco_detector.launch" ns="zed">
+    <arg name="image_topic" default="/zed2/zed_node/rgb/image_rect_color" />
+	  <arg name="camera_info_topic" default="/zed2/zed_node/rgb/camera_info" />
+	  <arg name="charuco_tf_frame" default="$(arg charuco_zed_frame_id)" />
+  </include>
+  
+  <include if="$(arg calib_nao)" file="$(find charuco_detector)/launch/charuco_detector.launch" ns="nao">
+    <arg name="image_topic" default="/naoqi/image_rect_color" />
+	  <arg name="camera_info_topic" default="/naoqi/camera_info" />
+	  <arg name="charuco_tf_frame" default="$(arg charuco_nao_frame_id)" />
+  </include>
+  
+  <node pkg="tobo_perception" type="calib_node.py" name="calib_node" output="screen">
+  </node>
+  
+</launch>

@@ -1,0 +1,35 @@
+<launch>
+  <node name="zed2" pkg="tf2_ros" type="static_transform_publisher" args="0.0
+    1.1
+    1.0
+    3.14159
+    0
+    -1.570758
+    world zed2_camera_center"/>
+    
+    <node name="nao" pkg="tf2_ros" type="static_transform_publisher" args="0.0
+    1.1
+    0.7
+    0
+    0
+    0
+    world nao_frame_id"/>
+    
+    <node name="focus_frame" pkg="tf2_ros" type="static_transform_publisher" args="0
+    0
+    0
+    0
+    -1.570758
+    0
+    child_gaze focus_frame"/>
+    
+    <node name="temporal" pkg="tf2_ros" type="static_transform_publisher" args="0
+    0
+    0
+    0
+    0
+    0
+    world child_gaze"/>
+
+</launch>
+

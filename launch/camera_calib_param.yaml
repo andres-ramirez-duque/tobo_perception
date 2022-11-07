@@ -1,0 +1,88 @@
+[ INFO] [1652259709.917107309]:  * CAMERA MODEL	 -> ZED 2
+[ INFO] [1652259709.917401017]:  * Serial Number -> 21604697
+[ INFO] [1652259709.917615919]:  * Camera FW Version -> 1523
+[ INFO] [1652259709.917792435]:  * Sensors FW Version -> 776
+
+
+[ INFO] [1652259713.975426695]: Static transform Sensor to Base [zed2_left_camera_frame -> base_link]
+[ INFO] [1652259713.975815144]:  * Translation: {0.000,-0.060,0.000}
+[ INFO] [1652259713.976069007]:  * Rotation: {0.000,-0.000,0.000}
+[ INFO] [1652259713.976317504]: Static transform Sensor to Camera Center [zed2_left_camera_frame -> zed2_camera_center]
+[ INFO] [1652259713.976671682]:  * Translation: {0.000,-0.060,0.000}
+[ INFO] [1652259713.976827103]:  * Rotation: {0.000,-0.000,0.000}
+[ INFO] [1652259713.977064715]: Static transform Camera Center to Base [zed2_camera_center -> base_link]
+[ INFO] [1652259713.977271075]:  * Translation: {0.000,0.000,0.000}
+[ INFO] [1652259713.977520875]:  * Rotation: {0.000,-0.000,0.000}
+
+rostopic echo /zed2/zed_node/rgb/camera_info
+---
+header: 
+  seq: 211
+  stamp: 
+    secs: 1652260376
+    nsecs: 820972767
+  frame_id: "zed2_left_camera_optical_frame"
+height: 720
+width: 1280
+distortion_model: "plumb_bob"
+D: [0.0, 0.0, 0.0, 0.0, 0.0]
+K: [539.65234375, 0.0, 622.3931884765625, 0.0, 539.65234375, 361.3262939453125, 0.0, 0.0, 1.0]
+R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+P: [539.65234375, 0.0, 622.3931884765625, 0.0, 0.0, 539.65234375, 361.3262939453125, 0.0, 0.0, 0.0, 1.0, 0.0]
+binning_x: 0
+binning_y: 0
+roi: 
+  x_offset: 0
+  y_offset: 0
+  height: 0
+  width: 0
+  do_rectify: False
+---
+
+rostopic echo /zed2/zed_node/rgb_raw/camera_info
+---
+header: 
+  seq: 157
+  stamp: 
+    secs: 1652260559
+    nsecs: 310767767
+  frame_id: "zed2_left_camera_optical_frame"
+height: 720
+width: 1280
+distortion_model: "plumb_bob"
+D: [-0.04147160053253174, 0.009508290328085423, -0.004628629889339209, 0.0004065220127813518, -0.0002930049959104508]
+K: [530.6849975585938, 0.0, 628.1500244140625, 0.0, 530.1699829101562, 348.45849609375, 0.0, 0.0, 1.0]
+R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+P: [530.6849975585938, 0.0, 628.1500244140625, 0.0, 0.0, 530.1699829101562, 348.45849609375, 0.0, 0.0, 0.0, 1.0, 0.0]
+binning_x: 0
+binning_y: 0
+roi: 
+  x_offset: 0
+  y_offset: 0
+  height: 0
+  width: 0
+  do_rectify: False
+---
+---
+header: 
+  seq: 14
+  stamp: 
+    secs: 1652441568
+    nsecs: 522013606
+  frame_id: "zed2_left_camera_optical_frame"
+height: 1080
+width: 1920
+distortion_model: "plumb_bob"
+D: [0.0, 0.0, 0.0, 0.0, 0.0]
+K: [1095.98583984375, 0.0, 942.5280151367188, 0.0, 1095.98583984375, 543.7188720703125, 0.0, 0.0, 1.0]
+R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+P: [1095.98583984375, 0.0, 942.5280151367188, 0.0, 0.0, 1095.98583984375, 543.7188720703125, 0.0, 0.0, 0.0, 1.0, 0.0]
+binning_x: 0
+binning_y: 0
+roi: 
+  x_offset: 0
+  y_offset: 0
+  height: 0
+  width: 0
+  do_rectify: False
+
