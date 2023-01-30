@@ -136,7 +136,7 @@ namespace tobo_perception {
     std_msgs::String emotion;
     std_msgs::Int64 h_rate;
     hri_msgs::FacialLandmarks FacialLandmarks;
-    hri_msgs::PointOfInterest2D p;
+    hri_msgs::NormalizedPointOfInterest2D p;
     
     LandmarkDetector::CLNF face_model;
     std::string file_uri;

@@ -420,7 +420,7 @@ namespace tobo_perception {
         if (!obj_meta)
             continue;
 
-        hri_msgs::PointOfInterest2D p;
+        hri_msgs::NormalizedPointOfInterest2D p; //NormalizedPointOfInterest2D
                        
         for (NvDsMetaList * l_user = obj_meta->obj_user_meta_list;
             l_user != NULL; l_user = l_user->next) {
