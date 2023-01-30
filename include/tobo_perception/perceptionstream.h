@@ -91,6 +91,7 @@ namespace tobo_perception {
     guint src_cnt;
     guint bus_watch_id;
     
+    std::string configs_path;
     std::string config_primary;
     std::string config_secondary;
     std::string config_gaze;

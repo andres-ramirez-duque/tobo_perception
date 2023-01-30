@@ -47,8 +47,8 @@ using std::string;
 #define SGIE_NET_WIDTH 80
 #define SGIE_NET_HEIGHT 80
 
-gint frame_number = 0;
-gint total_face_num = 0;
+guint frame_number = 0;
+guint total_face_num = 0;
 
 #define PRIMARY_DETECTOR_UID 1
 #define SECOND_DETECTOR_UID 2
@@ -860,46 +860,30 @@ create_source_bin (gpointer user_data, const char * uri)
   bool PerceptionStream::configure()
   {
       /* Read cvcore parameters from config file.*/
-    int numFaciallandmarks;
-    int maxBatchSize;
-    int inputLayerWidth;
-    int inputLayerHeight;
+    int numFaciallandmarks=80;
+    int maxBatchSize=32;
+    int inputLayerWidth=80;
+    int inputLayerHeight=80;
     
     cvcore::ModelInputParams ModelInputParams = {32, 80, 80, cvcore::Y_F32};
-    
-    camera_pub = image_transport.advertise("camera/image_raw", 1);
-    emotion_pub = nh.advertise<std_msgs::String>("/emotion", 10);
-    landmarks_pub = nh.advertise<hri_msgs::FacialLandmarks>("/landmarks", 10);
-    
-    emotion.data = "none";
     
     nh.param("/ros_hz", ros_hz,10);
     nh.param<std::string>("/camera_frame_id", camera_frame_id, "zed2_camera_center");
     nh.param<std::string>("/face_frame_id", face_frame_id, "face_frame");
     nh.param<std::string>("/world_frame_id", world_frame_id, "world");
+
+    nh.param<std::string>("/configs_path", configs_path, "home");
+       
+    config_primary = configs_path + "/configs/config_infer_primary_face_retina.txt";
+    config_secondary = configs_path + "/configs/face_sdk_sgie_config.txt";
+    config_gaze = "config-file:" + configs_path + "/configs/sample_gazenet_model_config.txt";
+    config_tracker = configs_path + "/configs/config_tracker_NvDCF_max_perf.yml";
     
-    nh.param("/maxBatchSize", maxBatchSize,32);
-    nh.param("/inputLayerWidth", inputLayerWidth, 80);
-    nh.param("/inputLayerHeight", inputLayerHeight, 80);
-    nh.param("/numFaciallandmarks", numFaciallandmarks, 80);
-   
-    nh.param<std::string>("/config_primary", config_primary, "config_infer_primary_facenet.txt");
-    nh.param<std::string>("/config_secondary", config_secondary, "faciallandmark_sgie_config.txt");
-    nh.param<std::string>("/config_gaze", config_gaze, "sample_gazenet_model_config.txt");
-    nh.param<std::string>("/config_hr", config_hr, "sample_heartrate_model_config.txt");
-    nh.param<std::string>("/config_emotion", config_emotion, "sample_emotion_model_config.txt");
-    nh.param<std::string>("/config_tracker", config_tracker, "config_tracker_NvDCF_max_perf.yml");
-    
-    nh.param<std::string>("/gaze_lib", gaze_lib, "libnvds_gazeinfer.so");
-    nh.param<std::string>("/hr_lib", hr_lib, "libnvds_heartrateinfer.so");
-    nh.param<std::string>("/emotion_lib", emotion_lib, "libnvds_emotion_impl.so");
-    nh.param<std::string>("/tracker_lib", tracker_lib, "libnvds_nvmultiobjecttracker.so");
+    gaze_lib = configs_path + "/apps/libnvds_gazeinfer.so";
+    tracker_lib = "/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_nvmultiobjecttracker.so";
     
     nh.param("/os_display", os_display, true);
     nh.param("/src_zed_gst", src_zed_gst, false);
-    
-    nh.param("/src_file", src_file, true);
-    nh.param<std::string>("/file_uri", file_uri, "file:///home/tobojetuk/William/w_b_output_2.mp4");
     
     frame_width=736;
     frame_height=416;
@@ -980,7 +964,7 @@ create_source_bin (gpointer user_data, const char * uri)
                  *primary_detector = NULL, *second_detector = NULL,
                  *nvvidconv = NULL, *nvosd = NULL, *nvvidconv1 = NULL,
                  *outenc = NULL, *capfilt = NULL,
-                 *gaze_identifier = NULL, *hrinfer = NULL, *emotioninfer = NULL;
+                 *gaze_identifier = NULL, *hrinfer = NULL;
     GstElement *source_bin = NULL, *zedsrc = NULL, *videoconvert = NULL, *tracker = NULL,
                 *src_nvvidconv = NULL, *src_capsfilt = NULL, *v4l_capsfilt = NULL;
     GstElement *queue1 = NULL, *queue2 = NULL, *queue3 = NULL, *queue4 = NULL,
@@ -1031,96 +1015,80 @@ create_source_bin (gpointer user_data, const char * uri)
     }
 
     gst_bin_add (GST_BIN(pipeline_), streammux);
+    
     /* Source element: reading from the file; Zed gst plugin or v4l2src */
     
-    if (src_file == true){
-      source_struct.index = 0;
-      if (!create_source_bin (this, file_uri.c_str()))
-      {
-        g_printerr ("Source bin could not be created. Exiting.\n");
-        return -1; 
-      }
-      gst_bin_add (GST_BIN (pipeline_), source_struct.source_bin);
-      srcpad = gst_element_get_static_pad (source_struct.source_bin, pad_name_src);
-      
-      if (!srcpad) {
-        g_printerr ("Decoder request src pad failed. Exiting.\n");
-        return -1;
-      } 
+    source_bin = gst_bin_new ("source-bin-01");
+    
+    if(!src_zed_gst){
+      zedsrc = gst_element_factory_make ("v4l2src", "src_elem");
     } else{
+      zedsrc = gst_element_factory_make ("zedsrc", "source_zedsrc");
+    }
+  
+    videoconvert = gst_element_factory_make ("videoconvert", "source_videoconvert");    
+    src_nvvidconv = gst_element_factory_make ("nvvideoconvert", "source_nvvidconv");
+    src_capsfilt = gst_element_factory_make ("capsfilter", "source_capset");
+    v4l_capsfilt = gst_element_factory_make ("capsfilter", "v4lsource_capset");
+    
+    if (!source_bin || !zedsrc || !videoconvert || !src_nvvidconv || !src_capsfilt || !v4l_capsfilt) {
+      g_printerr ("One element in source bin could not be created.\n");
+      return false;
+    }
+  
+    src_caps = gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "NV12", NULL);
+    src_feature = gst_caps_features_new ("memory:NVMM", NULL);
+    gst_caps_set_features (src_caps, 0, src_feature);
+    g_object_set (G_OBJECT (src_capsfilt), "caps", src_caps, NULL);
+  
+    v4lsrc_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "YUY2", 
+	  "width", G_TYPE_INT, stream_width*2, "height", G_TYPE_INT, stream_height, 
+	  "framerate", GST_TYPE_FRACTION, 60, 1, NULL);
+    g_object_set (G_OBJECT (v4l_capsfilt), "caps", v4lsrc_caps, NULL);
+  
+    guint left=(stream_width-frame_width)/2; //Para formar el src crop="left:top:width:height"
+    guint top=(stream_height-frame_height)/2;
+    stringstream crop;
+    crop << left <<":"<< top << ":" << frame_width << ":" << frame_height;
+
+    g_object_set (G_OBJECT (src_nvvidconv), "src-crop", crop.str().c_str() , NULL);//crop.str() "272:152:736:416"
+  
+    if(!src_zed_gst){
+      g_object_set (G_OBJECT (zedsrc), "device", "/dev/video0", NULL);
+      gst_bin_add_many (GST_BIN (source_bin),zedsrc,v4l_capsfilt,src_nvvidconv,src_capsfilt, NULL);
       
-      source_bin = gst_bin_new ("source-bin-01");
-    
-      if(!src_zed_gst){
-        zedsrc = gst_element_factory_make ("v4l2src", "src_elem");
-      } else{
-        zedsrc = gst_element_factory_make ("zedsrc", "source_zedsrc");
-      }
-    
-      videoconvert = gst_element_factory_make ("videoconvert", "source_videoconvert");    
-      src_nvvidconv = gst_element_factory_make ("nvvideoconvert", "source_nvvidconv");
-      src_capsfilt = gst_element_factory_make ("capsfilter", "source_capset");
-      v4l_capsfilt = gst_element_factory_make ("capsfilter", "v4lsource_capset");
-      
-      if (!source_bin || !zedsrc || !videoconvert || !src_nvvidconv || !src_capsfilt || !v4l_capsfilt) {
-        g_printerr ("One element in source bin could not be created.\n");
-        return false;
-      }
-    
-      src_caps = gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "NV12", NULL);
-      src_feature = gst_caps_features_new ("memory:NVMM", NULL);
-      gst_caps_set_features (src_caps, 0, src_feature);
-      g_object_set (G_OBJECT (src_capsfilt), "caps", src_caps, NULL);
-    
-      v4lsrc_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "YUY2", 
-		  "width", G_TYPE_INT, stream_width*2, "height", G_TYPE_INT, stream_height, 
-		  "framerate", GST_TYPE_FRACTION, 60, 1, NULL);
-      g_object_set (G_OBJECT (v4l_capsfilt), "caps", v4lsrc_caps, NULL);
-    
-      guint left=(stream_width-frame_width)/2; //Para formar el src crop="left:top:width:height"
-      guint top=(stream_height-frame_height)/2;
-      stringstream crop;
-      crop << left <<":"<< top << ":" << frame_width << ":" << frame_height;
-      //g_printerr("******************%s****************\n",crop.str().c_str());
-      g_object_set (G_OBJECT (src_nvvidconv), "src-crop", crop.str().c_str() , NULL);//crop.str() "272:152:736:416"
-    
-      if(!src_zed_gst){
-        g_object_set (G_OBJECT (zedsrc), "device", "/dev/video0", NULL);
-        gst_bin_add_many (GST_BIN (source_bin),zedsrc,v4l_capsfilt,src_nvvidconv,src_capsfilt, NULL);
-        
-      if (!gst_element_link_many (zedsrc, v4l_capsfilt, src_nvvidconv, src_capsfilt, NULL)) {
-            g_printerr ("Could not link zedsrc, vidconvert, nvvidconv and capsfilter\n");
-            return false;
-        }
-    } else{
-       g_object_set (G_OBJECT (zedsrc), "stream-type", 0, "camera-resolution", zed_resolution, "camera-fps", 30, "enable-positional-tracking", false, "depth-mode", 0, "depth-stabilization", false, "od-enabled", false,"od-enable-tracking", false, "aec-agc" ,false, "set-as-static", true, NULL);
-       gst_bin_add_many (GST_BIN (source_bin),zedsrc,videoconvert,src_nvvidconv,src_capsfilt, NULL);
-        
-       if (!gst_element_link_many (zedsrc, videoconvert, src_nvvidconv, src_capsfilt, NULL)) {
+    if (!gst_element_link_many (zedsrc, v4l_capsfilt, src_nvvidconv, src_capsfilt, NULL)) {
           g_printerr ("Could not link zedsrc, vidconvert, nvvidconv and capsfilter\n");
           return false;
-        }
       }
+  } else{
+     g_object_set (G_OBJECT (zedsrc), "stream-type", 0, "camera-resolution", zed_resolution, "camera-fps", 30, "enable-positional-tracking", false, "depth-mode", 0, "depth-stabilization", false, "od-enabled", false,"od-enable-tracking", false, "aec-agc" ,false, "set-as-static", true, NULL);
+     gst_bin_add_many (GST_BIN (source_bin),zedsrc,videoconvert,src_nvvidconv,src_capsfilt, NULL);
       
-      //*********
-
-      GstPad *gstpad = gst_element_get_static_pad (src_capsfilt,"src");
-      if (!gstpad) {
-        g_printerr ("Could not find srcpad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
+     if (!gst_element_link_many (zedsrc, videoconvert, src_nvvidconv, src_capsfilt, NULL)) {
+        g_printerr ("Could not link zedsrc, vidconvert, nvvidconv and capsfilter\n");
         return false;
       }
-      if(!gst_element_add_pad (source_bin, gst_ghost_pad_new ("src", gstpad))) {
-        g_printerr ("Could not add ghost pad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
-      }
-      gst_object_unref (gstpad);
-      //*********  
-      
-      gst_bin_add (GST_BIN (pipeline_), source_bin);
-      srcpad = gst_element_get_static_pad (source_bin, pad_name_src);
-      if (!srcpad) {
-        g_printerr ("Decoder zedsrc request src pad failed. Exiting.\n");
-        return -1;
-      }
+    }
+    
+    //*********
+
+    GstPad *gstpad = gst_element_get_static_pad (src_capsfilt,"src");
+    if (!gstpad) {
+      g_printerr ("Could not find srcpad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
+      return false;
+    }
+    if(!gst_element_add_pad (source_bin, gst_ghost_pad_new ("src", gstpad))) {
+      g_printerr ("Could not add ghost pad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
+    }
+    gst_object_unref (gstpad);
+    //*********  
+    
+    gst_bin_add (GST_BIN (pipeline_), source_bin);
+    srcpad = gst_element_get_static_pad (source_bin, pad_name_src);
+    if (!srcpad) {
+      g_printerr ("Decoder zedsrc request src pad failed. Exiting.\n");
+      return -1;
     }
     sinkpad = gst_element_get_request_pad (streammux, pad_name_sink);
      
@@ -1154,10 +1122,6 @@ create_source_bin (gpointer user_data, const char * uri)
 
     gaze_identifier = gst_element_factory_make ("nvdsvideotemplate", "gaze_infer");
     
-    //hrinfer = gst_element_factory_make ("nvdsvideotemplate","heartrate_infer");
-    
-    //emotioninfer = gst_element_factory_make ("nvdsvideotemplate","emotioninfer");
-    
     tracker = gst_element_factory_make ("nvtracker", "tracking_tracker");
     
     g_object_set (G_OBJECT (tracker), "tracker-width", frame_width, "tracker-height", frame_height, "ll-config-file", config_tracker.c_str(), "ll-lib-file", tracker_lib.c_str(), NULL);
@@ -1184,7 +1148,7 @@ create_source_bin (gpointer user_data, const char * uri)
     sink = gst_element_factory_make ("fakesink", "fake-renderer");
     }
     
-    if (!primary_detector || !second_detector || !nvvidconv || !nvosd || !sink  || !capfilt || !gaze_identifier) {//|| !hrinfer || !emotioninfer
+    if (!primary_detector || !second_detector || !nvvidconv || !nvosd || !sink  || !capfilt || !gaze_identifier) {
         g_printerr ("One element could not be created. Exiting.\n");
         return -1;
     }
@@ -1196,19 +1160,9 @@ create_source_bin (gpointer user_data, const char * uri)
     g_object_set (G_OBJECT (primary_detector), "config-file-path", config_primary.c_str(), "unique-id", PRIMARY_DETECTOR_UID, NULL);
 
     g_object_set (G_OBJECT (second_detector), "config-file-path", config_secondary.c_str(), "unique-id", SECOND_DETECTOR_UID, NULL);
-
-    std::string config_gaze_aux = "config-file:" + config_gaze;
      
-    g_object_set (G_OBJECT (gaze_identifier), "customlib-name", gaze_lib.c_str(), "customlib-props", config_gaze_aux.c_str(), NULL);
+    g_object_set (G_OBJECT (gaze_identifier), "customlib-name", gaze_lib.c_str(), "customlib-props", config_gaze.c_str(), NULL);
     
-    /*std::string config_hr_aux = "config-file:" + config_hr;
-    
-    g_object_set (G_OBJECT (hrinfer), "customlib-name", hr_lib.c_str(), "customlib-props", config_hr_aux.c_str(), NULL);
-    
-    std::string config_emotion_aux = "config-file:" + config_emotion;
-    
-    g_object_set (G_OBJECT (emotioninfer), "customlib-name", emotion_lib.c_str(), "customlib-props", config_emotion_aux.c_str(), NULL);  
-    */
     /* we add a bus message handler */
      bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline_));
      bus_watch_id = gst_bus_add_watch (bus, bus_call, loop);
@@ -1233,11 +1187,7 @@ create_source_bin (gpointer user_data, const char * uri)
      }
 
      g_object_set (G_OBJECT (sink), "sync", 0, "async", false,NULL);
-/*     if (!gst_element_link(nvosd, sink)) {
-        g_printerr ("OSD and sink elements link failure.\n");
-        return -1;
-    }
-*/   
+   
     if(os_display){  
 #ifdef PLATFORM_TEGRA
      gst_bin_add_many (GST_BIN (pipeline_), transform, queue8, NULL);
@@ -1251,23 +1201,22 @@ create_source_bin (gpointer user_data, const char * uri)
         g_printerr ("OSD and sink elements link failure.\n");
         return -1;
     }
-#endif
-    /* Display the facemarks output on video. Fakesink do not need to display. */
-    osd_sink_pad = gst_element_get_static_pad (queue5, "sink");
-    if (!osd_sink_pad)
-        g_print ("Unable to get sink pad\n");
-    else
-        gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
-          tile_sink_pad_buffer_probe, this, NULL);
-        gst_object_unref (osd_sink_pad);
-        
+#endif    
     } else{
         if (!gst_element_link(nvosd, sink)) {
             g_printerr ("OSD and sink elements link failure.\n");
             return -1;
         }
     }
-
+    /* Display the facemarks output on video. Fakesink do not need to display. */
+    osd_sink_pad = gst_element_get_static_pad (queue5, "src");
+    if (!osd_sink_pad)
+        g_print ("Unable to get sink pad\n");
+    else
+        gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
+          tile_sink_pad_buffer_probe, this, NULL);
+    gst_object_unref (osd_sink_pad);
+    
     /* publish the facemarks and output data on ROS env*/
     osd_sink_pad = gst_element_get_static_pad (queue5, "sink");
     if (!osd_sink_pad)
@@ -1275,7 +1224,7 @@ create_source_bin (gpointer user_data, const char * uri)
     else
         gst_pad_add_probe (osd_sink_pad, GST_PAD_PROBE_TYPE_BUFFER,
           ros_publish_sink_pad_buffer_probe, this, NULL);
-        gst_object_unref (osd_sink_pad);
+    gst_object_unref (osd_sink_pad);
         
     /*Performance measurement*/
     osd_sink_pad = gst_element_get_static_pad (nvosd, "sink");
@@ -1303,7 +1252,14 @@ create_source_bin (gpointer user_data, const char * uri)
         sgie_pad_buffer_probe, this, NULL);
     gst_object_unref (osd_sink_pad);
     
-    ROS_INFO("Configure function.");
+    gst_element_set_state (pipeline_, GST_STATE_PAUSED);
+    
+    if(gst_element_get_state (pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE){
+    ROS_ERROR("Failed to PAUSE stream");
+    return false;
+    }
+
+    ROS_INFO("gstreamer initialised and pipeline is PAUSED");
     return true;
   }
 /***************************************************************************************/
@@ -1312,17 +1268,24 @@ create_source_bin (gpointer user_data, const char * uri)
     
     ros::Rate r(ros_hz); // 6 hz
     /* Set the pipeline to "playing" state */  
-    if(gst_element_set_state (pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE){
-    ROS_ERROR("Could not start stream");
+    gst_element_set_state (pipeline_, GST_STATE_PLAYING);
+    if(gst_element_get_state (pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE){
+    ROS_ERROR("Failed to PLAY during prerroll");
+    return;
+    }
+    gst_element_set_state (pipeline_, GST_STATE_PAUSED);
+    if(gst_element_get_state (pipeline_, NULL, NULL, -1) == GST_STATE_CHANGE_FAILURE){
+    ROS_ERROR("Failed to PAUSE during prerroll");
     return;
     }
     
+    if(gst_element_set_state (pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE){
+    ROS_ERROR("Failed to PLAY");
+    return;
+    }
+    ROS_INFO("Started Stream");
     while(ros::ok()) 
     {
-      //landmarks_pub.publish(FacialLandmarks);
-      //gaze_pub.publish(gaze_pose);
-      //emotion_pub.publish(emotion);
-      //camera_pub.publish(msg);
       tf_br.sendTransform(face_transform);
       ros::spinOnce();
       r.sleep();
@@ -1335,16 +1298,16 @@ create_source_bin (gpointer user_data, const char * uri)
   void PerceptionStream::cleanup_stream()
   {
     gst_element_set_state (pipeline_, GST_STATE_NULL);
-
+    g_print (" ==== Tobo_Perception_Node ended ===== \n");
     if(perf_measure.total_time)
     {
-        g_print ("Average fps %f\n",
+        g_print ("-- Average fps: %f\n",
           ((perf_measure.count-1)*src_cnt*1000000.0)/perf_measure.total_time);
     }
-
-    g_print ("Totally %d frames adquired\n",frame_number);
-    g_print ("Totally %d faces are inferred\n",total_face_num);
-    g_print ("Faces detected in %f %% of the frames\n", total_face_num/frame_number);
+    
+    g_print ("-- Totally frames adquired: %d \n",frame_number);
+    g_print ("-- Totally faces inferred: %d \n",total_face_num);
+    g_print ("-- Percentage Faces detected: %f %% \n", total_face_num*100.0/frame_number);
     g_print ("Deleting pipeline\n");
     gst_object_unref (GST_OBJECT (pipeline_));
     g_source_remove (bus_watch_id);
@@ -1367,8 +1330,8 @@ create_source_bin (gpointer user_data, const char * uri)
 
       this->cleanup_stream();
 
-      ROS_INFO("GStreamer stream stopped!");
-      ROS_INFO("Cleaning up stream and exiting...");
+      g_print("GStreamer stream stopped!");
+      g_print("Cleaning up stream and exiting...");
       break;
     }
 
