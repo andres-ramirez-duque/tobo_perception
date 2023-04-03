@@ -46,6 +46,7 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Int64.h>
+#include <std_srvs/Trigger.h>
 #include "hri_msgs/FacialLandmarks.h"
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -68,8 +69,13 @@ namespace tobo_perception {
     bool init_stream();
     void publish_stream();
     void cleanup_stream();
-
     void run();
+    void stopRecording();
+    void startRecording();
+    bool toggle_recording(std_srvs::Trigger::Request& request, std_srvs::Trigger::Response& response);
+    
+
+    
     
     struct perf_measure{
         GstClockTime pre_time;
@@ -92,6 +98,7 @@ namespace tobo_perception {
     guint bus_watch_id;
     
     std::string configs_path;
+    std::string recordings_path;
     std::string config_primary;
     std::string config_secondary;
     std::string config_gaze;
@@ -121,6 +128,7 @@ namespace tobo_perception {
     ros::Publisher landmarks_pub;
     ros::Publisher hrate_pub;
     tf2_ros::TransformBroadcaster tf_br;
+    ros::ServiceServer service;
     
     int zed_resolution;
     guint stream_width;
@@ -155,12 +163,17 @@ namespace tobo_perception {
     float scaling;
     
     cv::Vec6d head_pose;
-      
-  private:
     
     // Gstreamer structures
     GstElement *pipeline_;
     GMainLoop *loop = NULL;
+    GstElement *tee, *rec_videoconvert, *rec_capsfilt, *rec_encoder, *rec_muxer, *rec_filesink, *queue_record, *h264parse, *omx_capsfilt;
+    GstPad *teepad;
+    const char *file_path;
+    gint counter = 0;
+    gboolean recording = FALSE;
+      
+  private:
     
     // Camera publisher configuration
     std::string frame_id_;

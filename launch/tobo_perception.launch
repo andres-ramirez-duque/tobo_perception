@@ -1,7 +1,6 @@
 <launch>
   <arg name="ros_hz" default="7.0"/>
   <arg name="os_display" default="true"/>
-  <arg name="src_zed_gst" default="false"/>
 
   <arg name="face_frame_id" default="face_frame"/>
   <arg name="focus_frame_id" default="focus_frame"/>
@@ -13,10 +12,10 @@
   <param name="zed_resolution" value="1.0"/>
 
   <param name="configs_path" value="/home/$(arg machine_name)/catkin_ws/src/tobo_perception"/>
+  <param name="recordings_path" value="/media/$(arg machine_name)/Maxtor/recording_test/"/>
   
   <param name="os_display" value="$(arg os_display)"/>
   <param name="ros_hz" value="$(arg ros_hz)"/>
-  <param name="src_zed_gst" value="$(arg src_zed_gst)"/>
   <param name="focus_frame_id" value="$(arg focus_frame_id)"/>
   
   <!-- Static transforms Enviroment setup -->
@@ -28,7 +27,7 @@
   <node pkg="tobo_perception" type="focus_estimation" name="focus_estimation_node" output="screen">
   </node>
   
-  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find tobo_perception)/configs/perception.rviz"/>
+  <!--node type="rviz" name="rviz" pkg="rviz" args="-d $(find tobo_perception)/configs/perception.rviz"/-->
 </launch>
 
 <!-- roslaunch tobo_perception tobo_perception.launch os_display:=true ros_hz:=10.0 src_zed_gst:=true-->

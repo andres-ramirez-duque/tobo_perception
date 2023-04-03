@@ -185,17 +185,7 @@ namespace tobo_perception {
             }
         }
     }
-    
-    /*try
-    {
-        perception->msg = cv_bridge::CvImage(std_msgs::Header(), "rgba8", frame).toImageMsg();
-    }
-    catch (cv_bridge::Exception& e)
-    {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
-        return GST_PAD_PROBE_PASS;
-    } */ 
-    
+        
     NvBufSurfaceUnMap(in_surf, -1, -1);
     gst_buffer_unmap(GST_BUFFER (info->data), &in_map_info);
     //g_print ("Frame Number = %d Face Count = %d\n", frame_number, face_count);
@@ -667,185 +657,129 @@ namespace tobo_perception {
     }
     return GST_PAD_PROBE_OK;
   }
+/***************************************************************************************/
+static GstPadProbeReturn unlink_cb(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
+	g_print("Unlinking...");
+	PerceptionStream *perception = (PerceptionStream *)(user_data);
+	GstPad *sinkpad;
+	sinkpad = gst_element_get_static_pad (perception->queue_record, "sink");
+	gst_pad_unlink (perception->teepad, sinkpad);
+	gst_object_unref (sinkpad);
 
-  static gboolean
-  bus_call (GstBus * bus, GstMessage * msg, gpointer data)
-    {
-    GMainLoop *loop = (GMainLoop *) data;
-    switch (GST_MESSAGE_TYPE (msg)) {
-        case GST_MESSAGE_EOS:
-        g_print ("End of stream\n");
-        g_main_loop_quit (loop);
-        break;
-        case GST_MESSAGE_ERROR:{
-        gchar *debug;
-        GError *error;
-        gst_message_parse_error (msg, &error, &debug);
-        g_printerr ("ERROR from element %s: %s\n",
-              GST_OBJECT_NAME (msg->src), error->message);
-        if (debug)
-            g_printerr ("Error details: %s\n", debug);
-        g_free (debug);
-        g_error_free (error);
-        g_main_loop_quit (loop);
-        break;
-        }
-        default:
-          break;
-    }
-    return TRUE;
-  }
+	gst_element_send_event(perception->rec_encoder, gst_event_new_eos()); 
+
+	sleep(1);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->queue_record);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->rec_videoconvert);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->rec_capsfilt);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->omx_capsfilt);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->rec_encoder);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->h264parse);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->rec_muxer);
+	gst_bin_remove(GST_BIN (perception->pipeline_), perception->rec_filesink);
+
+	gst_element_set_state(perception->queue_record, GST_STATE_NULL);
+	gst_element_set_state(perception->rec_encoder, GST_STATE_NULL);
+  gst_element_set_state(perception->rec_videoconvert, GST_STATE_NULL);
+  gst_element_set_state(perception->rec_capsfilt, GST_STATE_NULL);
+  gst_element_set_state(perception->omx_capsfilt, GST_STATE_NULL);
+  gst_element_set_state(perception->h264parse, GST_STATE_NULL);
+	gst_element_set_state(perception->rec_muxer, GST_STATE_NULL);
+	gst_element_set_state(perception->rec_filesink, GST_STATE_NULL);
+
+	gst_object_unref(perception->queue_record);
+	gst_object_unref(perception->rec_videoconvert);
+	gst_object_unref(perception->rec_capsfilt);
+	gst_object_unref(perception->omx_capsfilt);
+	gst_object_unref(perception->rec_encoder);
+	gst_object_unref(perception->h264parse);
+	gst_object_unref(perception->rec_muxer);
+	gst_object_unref(perception->rec_filesink);
+
+	gst_element_release_request_pad (perception->tee, perception->teepad);
+	gst_object_unref (perception->teepad);
+
+	g_print("Unlinked\n");
+
+	return GST_PAD_PROBE_REMOVE;
+}
+
+void PerceptionStream::stopRecording() {
+	g_print("stopRecording\n");
+	gst_pad_add_probe(teepad, GST_PAD_PROBE_TYPE_IDLE, unlink_cb, this, NULL);
+        
+	recording = FALSE;
+}
+
+void PerceptionStream::startRecording() {
+	g_print("startRecording\n");
+	GstPad *sinkpad;
+	GstPadTemplate *templ;
+  GstCaps *rec_caps = NULL;
+  GstCaps *omx_caps = NULL;
   
-static void
-cb_newpad (GstElement * decodebin, GstPad * decoder_src_pad, gpointer data)
-{
-  g_print ("In cb_newpad\n");
-  GstCaps *caps = gst_pad_get_current_caps (decoder_src_pad);
-  const GstStructure *str = gst_caps_get_structure (caps, 0);
-  const gchar *name = gst_structure_get_name (str);
-  PerceptionStream *perception = (PerceptionStream *)(data);
-  GstCapsFeatures *features = gst_caps_get_features (caps, 0);
+	templ = gst_element_class_get_pad_template(GST_ELEMENT_GET_CLASS(tee), "src_%u");
+	teepad = gst_element_request_pad(tee, templ, NULL, NULL);
+	queue_record = gst_element_factory_make("queue", "queue_record");
+	rec_videoconvert = gst_element_factory_make ("videoconvert", NULL);
+	rec_capsfilt = gst_element_factory_make ("capsfilter", NULL);
+	rec_encoder = gst_element_factory_make("omxh264enc", NULL);
+	omx_capsfilt = gst_element_factory_make ("capsfilter", NULL);
+	h264parse = gst_element_factory_make("h264parse", NULL);
+	rec_muxer = gst_element_factory_make("matroskamux", NULL);
+	rec_filesink = gst_element_factory_make("filesink", NULL);
+	
+	time_t t = time(0);   // get time now
+  struct tm * now = localtime( & t );
+  char buffer [80];
+	strftime (buffer,80,"%Y-%m-%d-%H-%M",now);
+	char *file_name = (char*) malloc(255 * sizeof(char));
+	sprintf(file_name, "%stest_%d_%s.mkv", file_path, counter++, buffer);
+	g_print("Recording to file %s \n", file_name);
+	g_object_set(rec_filesink, "location", file_name, NULL);
+	g_object_set(rec_encoder, "profile", 1, NULL); // zerolatency
+	free(file_name);
+  rec_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "I420", NULL);
+  g_object_set (G_OBJECT (rec_capsfilt), "caps", rec_caps, NULL);
+  omx_caps = gst_caps_new_simple("video/x-h264", "stream-format", G_TYPE_STRING, "byte-stream", NULL);
+  g_object_set (G_OBJECT (omx_capsfilt), "caps", omx_caps, NULL);
+	//gst_bin_add_many(GST_BIN(pipeline_), gst_object_ref(queue_record), gst_object_ref(rec_encoder), gst_object_ref(rec_muxer), gst_object_ref(rec_filesink), NULL);
+	
+	gst_bin_add_many(GST_BIN(pipeline_), queue_record, rec_videoconvert, rec_capsfilt, rec_encoder, omx_capsfilt, h264parse, rec_muxer, rec_filesink, NULL);
+	
+	gst_element_link_many(queue_record, rec_videoconvert, rec_capsfilt, rec_encoder, omx_capsfilt, h264parse, rec_muxer, rec_filesink, NULL);
 
-  /* Need to check if the pad created by the decodebin is for video and not
-   * audio. */
-  if (!strncmp (name, "video", 5)) {
-    /* Link the decodebin pad to videoconvert if no hardware decoder is used */
-    if (perception->source_struct.vidconv) {
-      GstPad *conv_sink_pad = gst_element_get_static_pad (perception->source_struct.vidconv,
-          "sink");
-      if (gst_pad_link (decoder_src_pad, conv_sink_pad)) {
-        g_printerr ("Failed to link decoderbin src pad to"
-            " converter sink pad\n");
-      }
-      g_object_unref(conv_sink_pad);
-      if (!gst_element_link (perception->source_struct.vidconv, perception->source_struct.nvvidconv)) {
-         g_printerr ("Failed to link videoconvert to nvvideoconvert\n");
-      }
-    } else {
-      GstPad *conv_sink_pad = gst_element_get_static_pad (perception->source_struct.nvvidconv,
-          "sink");
-      if (gst_pad_link (decoder_src_pad, conv_sink_pad)) {
-        g_printerr ("Failed to link decoderbin src pad to "
-            "converter sink pad\n");
-      }
-      g_object_unref(conv_sink_pad);
-    }
-    if (gst_caps_features_contains (features, GST_CAPS_FEATURES_NVMM)) {
-      g_print ("###Decodebin pick nvidia decoder plugin.\n");
-    } else {
-      /* Get the source bin ghost pad */
-      g_print ("###Decodebin did not pick nvidia decoder plugin.\n");
-    }
-  }
+	gst_element_sync_state_with_parent(queue_record);
+	gst_element_sync_state_with_parent(rec_videoconvert);
+	gst_element_sync_state_with_parent(rec_capsfilt);
+	gst_element_sync_state_with_parent(rec_encoder);
+	gst_element_sync_state_with_parent(omx_capsfilt);
+	gst_element_sync_state_with_parent(h264parse);
+	gst_element_sync_state_with_parent(rec_muxer);
+	gst_element_sync_state_with_parent(rec_filesink);
+
+	sinkpad = gst_element_get_static_pad(queue_record, "sink");
+	gst_pad_link(teepad, sinkpad);
+	gst_object_unref(sinkpad);
+
+	recording = TRUE;
 }
 
-static void
-decodebin_child_added (GstChildProxy * child_proxy, GObject * object,
-    gchar * name, gpointer user_data)
-{
-  PerceptionStream *perception = (PerceptionStream *)(user_data);
-  g_print ("Decodebin child added: %s\n", name);
-  if (g_strrstr (name, "decodebin") == name) {
-    g_signal_connect (G_OBJECT (object), "child-added",
-        G_CALLBACK (decodebin_child_added), user_data);
-  }
-  if (g_strstr_len (name, -1, "pngdec") == name) {
-    perception->source_struct.vidconv = gst_element_factory_make ("videoconvert",
-        "source_vidconv");
-    gst_bin_add (GST_BIN (perception->source_struct.source_bin), perception->source_struct.vidconv);
-  } else {
-    perception->source_struct.vidconv = NULL;
-  }
-}
-
-static bool
-create_source_bin (gpointer user_data, const char * uri)
-{
-  PerceptionStream *perception = (PerceptionStream *)(user_data);
-  gchar bin_name[16] = { };
-  GstCaps *caps = NULL;
-  GstCapsFeatures *feature = NULL;
-
-  perception->source_struct.nvvidconv = NULL;
-  perception->source_struct.capsfilt = NULL;
-  perception->source_struct.source_bin = NULL;
-  perception->source_struct.uri_decode_bin = NULL;
-
-  g_snprintf (bin_name, 15, "source-bin-%02d", perception->source_struct.index);
-  /* Create a source GstBin to abstract this bin's content from the rest of the
-   * pipeline */
-  perception->source_struct.source_bin = gst_bin_new (bin_name);
-
-  /* Source element for reading from the uri.
-   * We will use decodebin and let it figure out the container format of the
-   * stream and the codec and plug the appropriate demux and decode plugins. */
-  perception->source_struct.uri_decode_bin = gst_element_factory_make ("uridecodebin",
-      "uri-decode-bin");
-  perception->source_struct.nvvidconv = gst_element_factory_make ("nvvideoconvert",
-      "source_nvvidconv");
-  perception->source_struct.capsfilt = gst_element_factory_make ("capsfilter",
-      "source_capset");
-
-  if (!perception->source_struct.source_bin || !perception->source_struct.uri_decode_bin ||
-      !perception->source_struct.nvvidconv
-      || !perception->source_struct.capsfilt) {
-    g_printerr ("One element in source bin could not be created.\n");
-    return false;
+  bool PerceptionStream::toggle_recording(std_srvs::Trigger::Request& request, std_srvs::Trigger::Response& response)
+  {
+	g_print("You toggle the recording video service\n");
+	if (recording)
+		this->stopRecording();
+	else
+		this->startRecording();
+	
+	response.success=true;
+	response.message="You toggle the recording video service";
+	return true;
   }
 
-  /* We set the input uri to the source element */
-  g_object_set (G_OBJECT (perception->source_struct.uri_decode_bin), "uri", uri, NULL);
+/******************************************************************************/
 
-  /* Connect to the "pad-added" signal of the decodebin which generates a
-   * callback once a new pad for raw data has beed created by the decodebin */
-  g_signal_connect (G_OBJECT (perception->source_struct.uri_decode_bin), "pad-added",
-      G_CALLBACK (cb_newpad), user_data);
-  g_signal_connect (G_OBJECT (perception->source_struct.uri_decode_bin), "child-added",
-      G_CALLBACK (decodebin_child_added), user_data);
-
-  caps = gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "NV12",
-      NULL);
-  feature = gst_caps_features_new ("memory:NVMM", NULL);
-  gst_caps_set_features (caps, 0, feature);
-  g_object_set (G_OBJECT (perception->source_struct.capsfilt), "caps", caps, NULL);
-
-#ifndef PLATFORM_TEGRA
-  g_object_set (G_OBJECT (perception->source_struct.nvvidconv), "nvbuf-memory-type", 3,
-      NULL);
-#endif
-
-  gst_bin_add_many (GST_BIN (perception->source_struct.source_bin),
-      perception->source_struct.uri_decode_bin, perception->source_struct.nvvidconv,
-      perception->source_struct.capsfilt, NULL);
-
-  if (!gst_element_link (perception->source_struct.nvvidconv,
-      perception->source_struct.capsfilt)) {
-    g_printerr ("Could not link vidconv and capsfilter\n");
-    return false;
-  }
-
-  /* We need to create a ghost pad for the source bin which will act as a proxy
-   * for the video decoder src pad. The ghost pad will not have a target right
-   * now. Once the decode bin creates the video decoder and generates the
-   * cb_newpad callback, we will set the ghost pad target to the video decoder
-   * src pad. */
-  GstPad *gstpad = gst_element_get_static_pad (perception->source_struct.capsfilt,
-      "src");
-  if (!gstpad) {
-    g_printerr ("Could not find srcpad in '%s'",
-        GST_ELEMENT_NAME(perception->source_struct.capsfilt));
-      return false;
-  }
-  if(!gst_element_add_pad (perception->source_struct.source_bin,
-      gst_ghost_pad_new ("src", gstpad))) {
-    g_printerr ("Could not add ghost pad in '%s'",
-        GST_ELEMENT_NAME(perception->source_struct.capsfilt));
-  }
-  gst_object_unref (gstpad);
-
-  return true;
-}  
-/***************************************************************************************/  
   PerceptionStream::PerceptionStream(ros::NodeHandle nodeh) :
     pipeline_(NULL),
     nh(nodeh),
@@ -873,7 +807,13 @@ create_source_bin (gpointer user_data, const char * uri)
     nh.param<std::string>("/world_frame_id", world_frame_id, "world");
 
     nh.param<std::string>("/configs_path", configs_path, "home");
-       
+    nh.param<std::string>("/recordings_path", recordings_path, "/media/tobojetuk/Maxtor/recording_test/");
+    
+    service= nh.advertiseService("/recording_service", &PerceptionStream::toggle_recording, this);
+    
+    file_path = (char*) malloc(255 * sizeof(char));
+	  file_path = recordings_path.c_str();
+    
     config_primary = configs_path + "/configs/config_infer_primary_face_retina.txt";
     config_secondary = configs_path + "/configs/face_sdk_sgie_config.txt";
     config_gaze = "config-file:" + configs_path + "/configs/sample_gazenet_model_config.txt";
@@ -883,7 +823,6 @@ create_source_bin (gpointer user_data, const char * uri)
     tracker_lib = "/opt/nvidia/deepstream/deepstream-6.0/lib/libnvds_nvmultiobjecttracker.so";
     
     nh.param("/os_display", os_display, true);
-    nh.param("/src_zed_gst", src_zed_gst, false);
     
     frame_width=736;
     frame_height=416;
@@ -969,7 +908,7 @@ create_source_bin (gpointer user_data, const char * uri)
                 *src_nvvidconv = NULL, *src_capsfilt = NULL, *v4l_capsfilt = NULL;
     GstElement *queue1 = NULL, *queue2 = NULL, *queue3 = NULL, *queue4 = NULL,
                *queue5 = NULL, *queue6 = NULL, *queue7 = NULL, *queue8 = NULL;
-    
+    GstElement *queue_display = NULL;
 #ifdef PLATFORM_TEGRA
     GstElement *transform = NULL;
 #endif
@@ -1008,43 +947,31 @@ create_source_bin (gpointer user_data, const char * uri)
 
     /* Create nvstreammux instance to form batches from one or more sources. */
     streammux = gst_element_factory_make ("nvstreammux", "stream-muxer");
-
-    if (!pipeline_ || !streammux) {
-          g_printerr ("One main element could not be created. Exiting.\n");
-          return -1;
-    }
-
-    gst_bin_add (GST_BIN(pipeline_), streammux);
-    
-    /* Source element: reading from the file; Zed gst plugin or v4l2src */
-    
-    source_bin = gst_bin_new ("source-bin-01");
-    
-    if(!src_zed_gst){
-      zedsrc = gst_element_factory_make ("v4l2src", "src_elem");
-    } else{
-      zedsrc = gst_element_factory_make ("zedsrc", "source_zedsrc");
-    }
-  
+    tee = gst_element_factory_make("tee", NULL);
+    queue_display = gst_element_factory_make("queue", "queue_display");
+    zedsrc = gst_element_factory_make ("zedsrc", "source_zedsrc");
     videoconvert = gst_element_factory_make ("videoconvert", "source_videoconvert");    
     src_nvvidconv = gst_element_factory_make ("nvvideoconvert", "source_nvvidconv");
     src_capsfilt = gst_element_factory_make ("capsfilter", "source_capset");
-    v4l_capsfilt = gst_element_factory_make ("capsfilter", "v4lsource_capset");
     
-    if (!source_bin || !zedsrc || !videoconvert || !src_nvvidconv || !src_capsfilt || !v4l_capsfilt) {
-      g_printerr ("One element in source bin could not be created.\n");
-      return false;
+    if (!pipeline_ || !zedsrc || !tee || !queue_display || !streammux || !videoconvert || !src_nvvidconv  || !src_capsfilt) {
+          g_printerr ("One main element could not be created. Exiting.\n");
+          return -1;
     }
-  
+    
+    gst_bin_add_many (GST_BIN(pipeline_), zedsrc, tee, queue_display, videoconvert, src_nvvidconv, src_capsfilt, streammux, NULL);
+    
+    if (!gst_element_link_many (zedsrc, tee, NULL) || !gst_element_link_many (tee, queue_display, videoconvert, src_nvvidconv, src_capsfilt, NULL)) {
+        g_printerr ("Could not link zedsrc, and tee elements\n");
+        return false;
+    }
+    
+    g_object_set (G_OBJECT (zedsrc), "stream-type", 0, "camera-resolution", zed_resolution, "camera-fps", 30, "enable-positional-tracking", false, "depth-mode", 0, "depth-stabilization", false, "od-enabled", false,"od-enable-tracking", false, "aec-agc" ,false, "set-as-static", true, NULL);
+    
     src_caps = gst_caps_new_simple ("video/x-raw", "format", G_TYPE_STRING, "NV12", NULL);
     src_feature = gst_caps_features_new ("memory:NVMM", NULL);
     gst_caps_set_features (src_caps, 0, src_feature);
     g_object_set (G_OBJECT (src_capsfilt), "caps", src_caps, NULL);
-  
-    v4lsrc_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "YUY2", 
-	  "width", G_TYPE_INT, stream_width*2, "height", G_TYPE_INT, stream_height, 
-	  "framerate", GST_TYPE_FRACTION, 60, 1, NULL);
-    g_object_set (G_OBJECT (v4l_capsfilt), "caps", v4lsrc_caps, NULL);
   
     guint left=(stream_width-frame_width)/2; //Para formar el src crop="left:top:width:height"
     guint top=(stream_height-frame_height)/2;
@@ -1052,59 +979,18 @@ create_source_bin (gpointer user_data, const char * uri)
     crop << left <<":"<< top << ":" << frame_width << ":" << frame_height;
 
     g_object_set (G_OBJECT (src_nvvidconv), "src-crop", crop.str().c_str() , NULL);//crop.str() "272:152:736:416"
-  
-    if(!src_zed_gst){
-      g_object_set (G_OBJECT (zedsrc), "device", "/dev/video0", NULL);
-      gst_bin_add_many (GST_BIN (source_bin),zedsrc,v4l_capsfilt,src_nvvidconv,src_capsfilt, NULL);
-      
-    if (!gst_element_link_many (zedsrc, v4l_capsfilt, src_nvvidconv, src_capsfilt, NULL)) {
-          g_printerr ("Could not link zedsrc, vidconvert, nvvidconv and capsfilter\n");
-          return false;
-      }
-  } else{
-     g_object_set (G_OBJECT (zedsrc), "stream-type", 0, "camera-resolution", zed_resolution, "camera-fps", 30, "enable-positional-tracking", false, "depth-mode", 0, "depth-stabilization", false, "od-enabled", false,"od-enable-tracking", false, "aec-agc" ,false, "set-as-static", true, NULL);
-     gst_bin_add_many (GST_BIN (source_bin),zedsrc,videoconvert,src_nvvidconv,src_capsfilt, NULL);
-      
-     if (!gst_element_link_many (zedsrc, videoconvert, src_nvvidconv, src_capsfilt, NULL)) {
-        g_printerr ("Could not link zedsrc, vidconvert, nvvidconv and capsfilter\n");
-        return false;
-      }
-    }
     
-    //*********
-
-    GstPad *gstpad = gst_element_get_static_pad (src_capsfilt,"src");
-    if (!gstpad) {
-      g_printerr ("Could not find srcpad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
-      return false;
-    }
-    if(!gst_element_add_pad (source_bin, gst_ghost_pad_new ("src", gstpad))) {
-      g_printerr ("Could not add ghost pad in '%s'", GST_ELEMENT_NAME(src_capsfilt));
-    }
-    gst_object_unref (gstpad);
-    //*********  
-    
-    gst_bin_add (GST_BIN (pipeline_), source_bin);
-    srcpad = gst_element_get_static_pad (source_bin, pad_name_src);
-    if (!srcpad) {
-      g_printerr ("Decoder zedsrc request src pad failed. Exiting.\n");
-      return -1;
-    }
+    srcpad = gst_element_get_static_pad (src_capsfilt, "src");
     sinkpad = gst_element_get_request_pad (streammux, pad_name_sink);
-     
-    if (!sinkpad) {
-      g_printerr ("Streammux request sink pad failed. Exiting.\n");
-      return -1;
-    }
-
+    
     if (gst_pad_link (srcpad, sinkpad) != GST_PAD_LINK_OK) {
       g_printerr ("Failed to link decoder to stream muxer. Exiting.\n");
       return -1;
     }
-    
     gst_object_unref (sinkpad);
     gst_object_unref (srcpad);
     
+    /*********/
     /* Create three nvinfer instances for two detectors and one classifier*/
     primary_detector = gst_element_factory_make ("nvinfer", "primary-infer-engine1");
 
@@ -1162,11 +1048,6 @@ create_source_bin (gpointer user_data, const char * uri)
     g_object_set (G_OBJECT (second_detector), "config-file-path", config_secondary.c_str(), "unique-id", SECOND_DETECTOR_UID, NULL);
      
     g_object_set (G_OBJECT (gaze_identifier), "customlib-name", gaze_lib.c_str(), "customlib-props", config_gaze.c_str(), NULL);
-    
-    /* we add a bus message handler */
-     bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline_));
-     bus_watch_id = gst_bus_add_watch (bus, bus_call, loop);
-     gst_object_unref (bus);
 
     /* Set up the pipeline */
     /* we add all elements into the pipeline */
@@ -1310,7 +1191,6 @@ create_source_bin (gpointer user_data, const char * uri)
     g_print ("-- Percentage Faces detected: %f %% \n", total_face_num*100.0/frame_number);
     g_print ("Deleting pipeline\n");
     gst_object_unref (GST_OBJECT (pipeline_));
-    g_source_remove (bus_watch_id);
   }
 /**************************************************************************************/
   void PerceptionStream::run() {

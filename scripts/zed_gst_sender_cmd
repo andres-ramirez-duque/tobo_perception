@@ -1,2 +1,2 @@
 #! /bin/bash
-gst-launch-1.0 zedsrc camera-resolution=3 camera-fps=30 ! autovideoconvert ! video/x-raw, format=I420 ! omxh264enc ! video/x-h264, stream-format=byte-stream ! rtph264pay pt=96 config-interval=-1 ! udpsink clients=$1:5000 max-bitrate=3000000 sync=false async=false
+gst-launch-1.0 zedsrc camera-resolution=1 camera-fps=30 ! videocrop left=272 top=152  right=1008 bottom=568 ! autovideoconvert ! video/x-raw, format=I420 ! omxh264enc ! video/x-h264, stream-format=byte-stream ! rtph264pay pt=96 config-interval=-1 ! udpsink clients=$1:5000 max-bitrate=3000000 sync=false async=false
