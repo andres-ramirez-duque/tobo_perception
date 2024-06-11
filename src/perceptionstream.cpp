@@ -715,8 +715,8 @@ void PerceptionStream::startRecording() {
 	g_print("startRecording\n");
 	GstPad *sinkpad;
 	GstPadTemplate *templ;
-  GstCaps *rec_caps = NULL;
-  GstCaps *omx_caps = NULL;
+        GstCaps *rec_caps = NULL;
+        GstCaps *omx_caps = NULL;
   
 	templ = gst_element_class_get_pad_template(GST_ELEMENT_GET_CLASS(tee), "src_%u");
 	teepad = gst_element_request_pad(tee, templ, NULL, NULL);
@@ -729,20 +729,20 @@ void PerceptionStream::startRecording() {
 	rec_muxer = gst_element_factory_make("matroskamux", NULL);
 	rec_filesink = gst_element_factory_make("filesink", NULL);
 	
-	time_t t = time(0);   // get time now
-  struct tm * now = localtime( & t );
-  char buffer [80];
-	strftime (buffer,80,"%Y-%m-%d-%H-%M",now);
+	//time_t t = time(0);   // get time now
+        //struct tm * now = localtime( & t );
+        //char buffer [80];
+	//strftime (buffer,80,"%Y-%m-%d-%H-%M",now);
 	char *file_name = (char*) malloc(255 * sizeof(char));
-	sprintf(file_name, "%stest_%d_%s.mkv", file_path, counter++, buffer);
+	sprintf(file_name, "%s_%s.mkv", file_path, video_name.c_str());
 	g_print("Recording to file %s \n", file_name);
 	g_object_set(rec_filesink, "location", file_name, NULL);
 	g_object_set(rec_encoder, "profile", 1, NULL); // zerolatency
 	free(file_name);
-  rec_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "I420", NULL);
-  g_object_set (G_OBJECT (rec_capsfilt), "caps", rec_caps, NULL);
-  omx_caps = gst_caps_new_simple("video/x-h264", "stream-format", G_TYPE_STRING, "byte-stream", NULL);
-  g_object_set (G_OBJECT (omx_capsfilt), "caps", omx_caps, NULL);
+        rec_caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "I420", NULL);
+        g_object_set (G_OBJECT (rec_capsfilt), "caps", rec_caps, NULL);
+        omx_caps = gst_caps_new_simple("video/x-h264", "stream-format", G_TYPE_STRING, "byte-stream", NULL);
+        g_object_set (G_OBJECT (omx_capsfilt), "caps", omx_caps, NULL);
 	//gst_bin_add_many(GST_BIN(pipeline_), gst_object_ref(queue_record), gst_object_ref(rec_encoder), gst_object_ref(rec_muxer), gst_object_ref(rec_filesink), NULL);
 	
 	gst_bin_add_many(GST_BIN(pipeline_), queue_record, rec_videoconvert, rec_capsfilt, rec_encoder, omx_capsfilt, h264parse, rec_muxer, rec_filesink, NULL);
@@ -808,11 +808,12 @@ void PerceptionStream::startRecording() {
 
     nh.param<std::string>("/configs_path", configs_path, "home");
     nh.param<std::string>("/recordings_path", recordings_path, "/media/tobojetuk/Maxtor/recording_test/");
+    nh.param<std::string>("/video_log", video_name, "video_name");
     
     service= nh.advertiseService("/recording_service", &PerceptionStream::toggle_recording, this);
     
     file_path = (char*) malloc(255 * sizeof(char));
-	  file_path = recordings_path.c_str();
+    file_path = recordings_path.c_str();
     
     config_primary = configs_path + "/configs/config_infer_primary_face_retina.txt";
     config_secondary = configs_path + "/configs/face_sdk_sgie_config.txt";
