@@ -96,7 +96,7 @@ namespace tobo_perception {
     perf_measure perf_measure;
     guint src_cnt;
     guint bus_watch_id;
-    
+    std::string video_name;
     std::string configs_path;
     std::string recordings_path;
     std::string config_primary;
