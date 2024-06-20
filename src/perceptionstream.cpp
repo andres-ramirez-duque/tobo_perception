@@ -734,7 +734,7 @@ void PerceptionStream::startRecording() {
         //char buffer [80];
 	//strftime (buffer,80,"%Y-%m-%d-%H-%M",now);
 	char *file_name = (char*) malloc(255 * sizeof(char));
-	sprintf(file_name, "%s_%s.mkv", file_path, video_name.c_str());
+	sprintf(file_name, "%svideo_%s.mkv", file_path, vid_name);
 	g_print("Recording to file %s \n", file_name);
 	g_object_set(rec_filesink, "location", file_name, NULL);
 	g_object_set(rec_encoder, "profile", 1, NULL); // zerolatency
@@ -814,6 +814,8 @@ void PerceptionStream::startRecording() {
     
     file_path = (char*) malloc(255 * sizeof(char));
     file_path = recordings_path.c_str();
+    vid_name = (char*) malloc(255 * sizeof(char));
+    vid_name = video_name.c_str();
     
     config_primary = configs_path + "/configs/config_infer_primary_face_retina.txt";
     config_secondary = configs_path + "/configs/face_sdk_sgie_config.txt";
