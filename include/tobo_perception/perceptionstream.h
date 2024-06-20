@@ -170,6 +170,7 @@ namespace tobo_perception {
     GstElement *tee, *rec_videoconvert, *rec_capsfilt, *rec_encoder, *rec_muxer, *rec_filesink, *queue_record, *h264parse, *omx_capsfilt;
     GstPad *teepad;
     const char *file_path;
+    const char *vid_name;
     gint counter = 0;
     gboolean recording = FALSE;
       
